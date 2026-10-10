@@ -17,22 +17,34 @@ resource "scaleway_iam_application" "workload" {
 resource "scaleway_iam_policy" "workload" {
   for_each       = local.workload_envs
   name           = "app-${each.key}"
-  description    = "app-${each.key}: read/write Serverless SQL in its own project only."
+  description    = "app-${each.key}: Serverless SQL data access in its own project only."
   application_id = scaleway_iam_application.workload[each.key].id
 
   rule {
     project_ids          = [scaleway_account_project.this[each.key].id]
-    permission_set_names = ["ServerlessSQLDatabaseReadWrite"]
+    permission_set_names = ["ServerlessSQLDatabaseDataReadWrite"] # data plane only: connect + SQL, not manage DBs
   }
 }
 
-# Rotate: tofu apply -replace='scaleway_iam_api_key.workload["dev"]', then redeploy
-# the env stack so containers pick up the new secret version.
+# Keys rotate every 180 days: the first bootstrap apply after the rotation date
+# replaces the key + secret version; then re-apply envs/* so containers pick it up.
+# Each key expires 30 days AFTER its rotation date as a grace period. (The org
+# also caps credential lifetime at 1 year, so "never expires" isn't an option.)
+resource "time_rotating" "workload_key" {
+  for_each      = local.workload_envs
+  rotation_days = 180
+}
+
 resource "scaleway_iam_api_key" "workload" {
   for_each           = local.workload_envs
   application_id     = scaleway_iam_application.workload[each.key].id
   description        = "app-${each.key} runtime key (Serverless SQL password)"
   default_project_id = scaleway_account_project.this[each.key].id
+  expires_at         = timeadd(time_rotating.workload_key[each.key].rotation_rfc3339, "720h")
+
+  lifecycle {
+    replace_triggered_by = [time_rotating.workload_key[each.key]]
+  }
 }
 
 # Hand the credentials to the environment via Secret Manager in ITS project.
