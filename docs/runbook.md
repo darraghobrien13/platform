@@ -54,6 +54,15 @@ cd infra/<stack> && tofu init && tofu plan
 ```
 **Gotcha:** the S3 API only sees buckets in the API key's **preferred Object Storage project**. Every key that touches state must use `platform-mgmt` as its preferred project. Otherwise you get `403 Forbidden` on `HeadObject`.
 
+For `infra/github`, also run `export GITHUB_TOKEN=$(gh auth token)`.
+
+**Shell gotcha:** export `SCW_PROFILE` on its **own line** first. In `export A=x B=$(cmd)`, the `$(cmd)` runs before `A` is exported, so it would read the wrong profile.
+
+### GitHub settings (`infra/github`)
+- **Managed as code:** the `protect-main` ruleset, plus the `dev` and `prod` environments. Only `main` can deploy to them, prod needs your approval, and admins can't bypass that.
+- **Not managed as code:** secret scanning and push protection. They were enabled once with `gh api -X PATCH repos/darraghobrien13/platform` (`security_and_analysis`). The repository resource itself is deliberately left out of IaC, to avoid any chance of an accidental delete.
+- **Emergency (CI is broken and blocks every merge):** temporarily set `enforcement = "disabled"` on the ruleset and apply locally. Fix CI, then re-enable.
+
 ### State locking
 - Each state file has a `<key>.tflock` object next to it, written with an S3 conditional write.
 - A second concurrent run fails with `Error acquiring the state lock … 412 PreconditionFailed`. This was tested on 2026-10-10.

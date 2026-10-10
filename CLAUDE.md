@@ -34,23 +34,58 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 - Each phase starts with a short plan and waits for the owner's approval.
 - Update this file at the end of every phase.
 
+## Current state (end of Phase 2, 2026-10-10)
+- **GitHub:** public repo `darraghobrien13/platform`.
+  - Secret scanning and push protection are on.
+  - Ruleset `protect-main` (from `infra/github`): changes go through a PR, CI checks `pre-commit` and `secret-scan` must pass, commits must be signed, no force-push or deletion.
+  - Environments `dev` and `prod`: only `main` can deploy; prod needs approval and has no admin bypass.
+- **Scaleway** (org `8c384137-afc0-49ec-b83f-6e8c3e21bedf`, region `fr-par`):
+  - Projects:
+
+    | Project | ID |
+    |---|---|
+    | `platform-mgmt` | `3404152e-3f65-4b16-a5de-24a8c1c6d960` |
+    | `platform-dev` | `841f6418-589a-4549-9d38-97f035dbf8a3` |
+    | `platform-prod` | `1fb17fcd-e4a4-4a25-aba3-99cca161c048` |
+
+  - **State:** bucket `darragh-platform-tfstate`, in mgmt, versioned, with `use_lockfile` locking (tested).
+    - State keys: `bootstrap/` and `github/`.
+  - **Identities:**
+    - The owner is used only for billing and break-glass.
+    - Day-to-day work uses IAM user `darragh-admin` (group `platform-admins`), with CLI profile `admin`.
+      - Its key's preferred project is `platform-mgmt`.
+      - It has **no IAM or billing** permissions; this was verified.
+  - **Budget:** €25/month, with email alerts at 20/50/80/100%. These are alerts only; Scaleway has no hard cap.
+- **Stacks:**
+  - `infra/bootstrap`: break-glass only, using a temporary owner key. **Never run in CI**, because its plan output contains emails.
+  - `infra/github`: applied locally with the admin profile and `GITHUB_TOKEN=$(gh auth token)`.
+- **Local:** `Brewfile` for tools; `mise.toml` pins OpenTofu 1.13.1, Node 24.21.0, tflint, gitleaks and pre-commit.
+
+## Gotchas learned
+- **S3 API scope:** the S3 API only sees buckets in the API key's *preferred Object Storage project*. Any key that touches state needs `platform-mgmt` as its preferred project, or you get `403` on `HeadObject`.
+- **IAM tags:** Scaleway IAM tags can't contain `:`. Use `key=value`.
+- **IAM policy `project_ids`:** wrap the list in `sort()`. The API returns it sorted, and an unsorted list in code causes a perpetual diff.
+- **Shell exports:** `export A=x B=$(cmd)` runs `cmd` before `A` is set. Export `SCW_PROFILE` on its own line first.
+- **Safety classifier:** it blocks IAM-mutating test calls, even ones expected to fail. Ask the owner to run those.
+
 ## Status
 - [x] Phase 0: Discovery
-- [x] Phase 1: Decisions (ADRs 0001–0007), awaiting owner review
-- [ ] Phase 2: Foundations
+- [x] Phase 1: Decisions (ADRs 0001–0007)
+- [x] Phase 2: Foundations
 - [ ] Phase 3: Infrastructure as code
 - [ ] Phase 4: CI/CD
 - [ ] Phase 5: Web app
 - [ ] Phase 6: Walkthrough
 
-## Next steps (Phase 2: Foundations)
-- Install local tooling: OpenTofu, the Scaleway CLI, gh, gitleaks, tflint, pre-commit, Node LTS, Docker or another container runtime.
-- Run `git init`, add `.gitignore` and a pre-commit secret scan, create the public GitHub repo, set up SSH auth, add the ruleset, and enable secret scanning.
-- Create the Scaleway account and harden it: MFA, no day-to-day use of the Organization owner, least-privilege identities. Create the `dev` and `prod` Projects.
-- Set up billing alerts. Check whether Scaleway offers a **hard** spending cap or only alerts.
-- Bootstrap the state bucket and prove `use_lockfile` locking works with two concurrent plans.
-- Open checks:
-  - Container Registry and Cockpit free allowances.
-  - Whether the Kapsule control plane is free.
-  - Where `darragh.email` is registered.
-  - The exact OpenTofu version to pin.
+## Next steps (Phase 3: Infrastructure as code)
+Show a short plan first and wait for approval.
+- Module layout: `infra/modules/*`, with `infra/envs/{dev,prod}` each using its own state key.
+- Per environment:
+  - Serverless Containers namespace
+  - Serverless SQL Database
+  - Secret Manager secrets
+  - Container Registry namespace, with an image cleanup policy
+  - Cockpit logs and metrics
+  - Custom domain records
+- DNS: `darragh.email` is registered at **GoDaddy**. Decide whether to move DNS to Scaleway Domains & DNS or Cloudflare, so the records can be managed by OpenTofu.
+- Refine the cost estimate before applying anything.
