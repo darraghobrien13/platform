@@ -7,16 +7,12 @@ variable "alert_emails" {
   type        = list(string)
 }
 
-# Shared lookups: project IDs (bootstrap) and the DNS zone (dns).
+# Shared lookup: project IDs (bootstrap).
 data "terraform_remote_state" "bootstrap" {
   backend = "s3"
   config  = merge(local.state_backend, { key = "bootstrap/terraform.tfstate" })
 }
 
-data "terraform_remote_state" "dns" {
-  backend = "s3"
-  config  = merge(local.state_backend, { key = "dns/terraform.tfstate" })
-}
 
 locals {
   state_backend = {
@@ -49,12 +45,10 @@ data "scaleway_secret_version" "db_credentials" {
 module "environment" {
   source = "../../modules/environment"
 
-  env             = local.env
-  project_id      = local.project_id
-  dns_zone        = data.terraform_remote_state.dns.outputs.zone
-  hostname_suffix = "-dev"
-  alert_emails    = var.alert_emails
-  db_credentials  = jsondecode(base64decode(data.scaleway_secret_version.db_credentials.data))
+  env            = local.env
+  project_id     = local.project_id
+  alert_emails   = var.alert_emails
+  db_credentials = jsondecode(base64decode(data.scaleway_secret_version.db_credentials.data))
 }
 
 output "web_url" {
