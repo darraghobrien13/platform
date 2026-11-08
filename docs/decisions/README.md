@@ -9,8 +9,9 @@ Each significant decision gets a short ADR, so a future reader, human or Claude,
 | [0003](0003-git-hosting-github-public.md) | Git hosting: public GitHub repo, GitHub Free | Accepted |
 | [0004](0004-cicd-github-actions.md) | CI/CD: GitHub Actions | Accepted |
 | [0005](0005-ci-credentials-scoped-api-keys.md) | CI credentials: scoped, expiring API keys (no OIDC yet) | Accepted |
-| [0006](0006-environments-region-dns.md) | Environments, region and DNS | Accepted |
+| [0006](0006-environments-region-dns.md) | Environments, region and DNS | Accepted (DNS part superseded by 0008) |
 | [0007](0007-app-stack-typescript.md) | App stack: TypeScript end to end | Proposed |
+| [0008](0008-builtin-urls-no-custom-domain.md) | Built-in Scaleway URLs instead of a custom domain; `web` forwards `/api` | Accepted |
 
 Figures marked **(verify)** were not confirmed from a primary source during Phase 1. They are re-checked in Phase 2.
 
