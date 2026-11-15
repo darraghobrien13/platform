@@ -1,4 +1,5 @@
-# One public HTTP service: a Serverless Container + custom domain (CNAME + TLS).
+# One public HTTP service: a Serverless Container on Scaleway's built-in HTTPS URL.
+# (Custom domains were removed: see ADR 0008.)
 variable "name" {
   type = string
 }
@@ -24,8 +25,9 @@ variable "cpu_limit" {
 }
 
 variable "memory_limit_mb" {
-  type    = number
-  default = 256
+  description = "Memory in MiB (256, 512, ...)."
+  type        = number
+  default     = 256
 }
 
 variable "max_scale" {
@@ -51,15 +53,7 @@ variable "secret_environment_variables" {
   sensitive = true
 }
 
-variable "dns_zone" {
-  description = "Zone that holds the record, e.g. cloud.darragh.email."
-  type        = string
-}
 
-variable "hostname_label" {
-  description = "Record name inside dns_zone, e.g. app-dev."
-  type        = string
-}
 
 resource "scaleway_container" "this" {
   name         = var.name
@@ -67,8 +61,10 @@ resource "scaleway_container" "this" {
   image        = var.image
   port         = var.port
 
-  cpu_limit          = var.cpu_limit
-  memory_limit_bytes = var.memory_limit_mb * 1024 * 1024
+  cpu_limit = var.cpu_limit
+  # Scaleway stores memory in whole decimal MB (e.g. 512 MiB -> 536000000 bytes).
+  # Send exactly that, or every plan shows a phantom memory change.
+  memory_limit_bytes = floor(var.memory_limit_mb * 1048576 / 1000000) * 1000000
   min_scale          = 0 # scale to zero when idle: pay nothing
   max_scale          = var.max_scale
 
@@ -94,25 +90,7 @@ resource "scaleway_container" "this" {
   }
 }
 
-resource "scaleway_domain_record" "this" {
-  dns_zone = var.dns_zone
-  name     = var.hostname_label
-  type     = "CNAME"
-  data     = "${trimprefix(scaleway_container.this.public_endpoint, "https://")}." # trailing dot = absolute name
-  ttl      = 300
-}
-
-# Binds the hostname to the container; Scaleway issues the TLS certificate.
-resource "scaleway_container_domain" "this" {
-  container_id = scaleway_container.this.id
-  hostname     = "${scaleway_domain_record.this.name}.${var.dns_zone}"
-}
-
 output "url" {
-  value = "https://${scaleway_container_domain.this.hostname}"
-}
-
-output "default_endpoint" {
   value = scaleway_container.this.public_endpoint
 }
 

@@ -25,6 +25,7 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 | 0005 | **Scoped, expiring API keys** for CI: one IAM Application per environment, rotated every ≤90 days. A deliberate deviation from OIDC. |
 | 0006 | Projects `dev` and `prod` in one Organization. Region `fr-par`. `dev.` and `app.darragh.email`. |
 | 0007 | TypeScript end to end (Fastify or Hono API, React + Vite, Drizzle or Kysely, Vitest). Status: proposed. |
+| 0008 | **Built-in Scaleway URLs, no custom domain.** Scaleway deletes external domains whose nameservers aren't moved within 14 days. `web` forwards `/api/*` to `api`: one origin, no CORS. |
 
 ## Conventions
 - **Never commit** secrets, keys, `*.tfstate*`, `.terraform/`, or `*.tfvars` that contain secrets. The repo is **public**, so mark sensitive values `sensitive = true` and never print them in plans or logs.
@@ -49,7 +50,7 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
     | `platform-prod` | `1fb17fcd-e4a4-4a25-aba3-99cca161c048` |
 
   - **State:** bucket `darragh-platform-tfstate`, in mgmt, versioned, with `use_lockfile` locking (tested).
-    - State keys: `bootstrap/` and `github/`.
+    - State keys: `bootstrap/`, `github/`, `envs/dev/` (`envs/prod/` not yet applied).
   - **Identities:**
     - The owner is used only for billing and break-glass.
     - Day-to-day work uses IAM user `darragh-admin` (group `platform-admins`), with CLI profile `admin`.
@@ -62,6 +63,12 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 - **Local:** `Brewfile` for tools; `mise.toml` pins OpenTofu 1.13.1, Node 24.21.0, tflint, gitleaks and pre-commit.
 
 ## Gotchas learned
+- **External domains:** Scaleway **deletes an external domain** (and every zone under it) if its nameservers aren't moved to Scaleway within **14 days**. Delegating only a subdomain doesn't count. See ADR 0008.
+- **Credential lifetime cap:** the org caps credential lifetime at **1 year**. API keys created with no expiry get one anyway, which caused a perpetual replace diff. Workload keys rotate via `time_rotating`. Owner keys created with "1 day" chosen in the console have come out with a 1-year expiry, so check with `scw iam api-key list`.
+- **Serverless SQL permissions:** `ServerlessSQLDatabaseDataReadWrite` gives rows only. `CREATE TABLE` fails with `permission denied for schema public`.
+- **Container memory:** Scaleway stores memory in whole decimal MB. Send `floor(MiB*1048576/1e6)*1e6` bytes, or every plan shows a phantom change.
+- **Strict PR checks:** after one PR merges, the others need **Update branch** (`gh pr update-branch N`) before they can merge.
+- **Deleting state objects:** the `scw` CLI can't delete individual objects. Use any S3 client against `https://s3.fr-par.scw.cloud`. Versioning keeps the old version.
 - **S3 API scope:** the S3 API only sees buckets in the API key's *preferred Object Storage project*. Any key that touches state needs `platform-mgmt` as its preferred project, or you get `403` on `HeadObject`.
 - **IAM tags:** Scaleway IAM tags can't contain `:`. Use `key=value`.
 - **IAM policy `project_ids`:** wrap the list in `sort()`. The API returns it sorted, and an unsorted list in code causes a perpetual diff.
@@ -72,20 +79,47 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 - [x] Phase 0: Discovery
 - [x] Phase 1: Decisions (ADRs 0001–0007)
 - [x] Phase 2: Foundations
-- [ ] Phase 3: Infrastructure as code
+- [ ] Phase 3: Infrastructure as code (in progress)
 - [ ] Phase 4: CI/CD
 - [ ] Phase 5: Web app
 - [ ] Phase 6: Walkthrough
 
-## Next steps (Phase 3: Infrastructure as code)
-Show a short plan first and wait for approval.
-- Module layout: `infra/modules/*`, with `infra/envs/{dev,prod}` each using its own state key.
-- Per environment:
-  - Serverless Containers namespace
-  - Serverless SQL Database
-  - Secret Manager secrets
-  - Container Registry namespace, with an image cleanup policy
-  - Cockpit logs and metrics
-  - Custom domain records
-- DNS: `darragh.email` is registered at **GoDaddy**. Decide whether to move DNS to Scaleway Domains & DNS or Cloudflare, so the records can be managed by OpenTofu.
-- Refine the cost estimate before applying anything.
+## Phase 3 progress (updated 2026-11-08, resume here)
+**Done and verified:**
+- **`infra/bootstrap/workloads.tf`:** IAM apps `app-dev` and `app-prod`.
+  - Permission: `ServerlessSQLDatabaseDataReadWrite`, scoped to their own project.
+  - Keys rotate every 180 days.
+  - Login JSON `{user, password}` is in Secret Manager as `db-credentials` in each environment's project.
+- **`infra/envs/dev`:** applied; `tofu plan` shows no changes.
+  - `web`: https://platformdevc2a6ec33-web.functions.fnc.fr-par.scw.cloud
+  - `api`: https://platformdevc2a6ec33-api.functions.fnc.fr-par.scw.cloud
+  - Both run the nginx placeholder image, and cold start is about 4–5s.
+  - The database `platform-dev` (Postgres 16.15) accepts connections as `app-dev`.
+- **Custom domains removed** (ADR 0008). The `infra/dns` stack and its state are deleted.
+
+**Next: option B, chosen by the owner** (separate migration identity):
+1. In `infra/bootstrap/workloads.tf`, add a `migrate-<env>` IAM app per environment.
+   - Permission: `ServerlessSQLDatabaseReadWrite`, on its own project.
+   - Key rotates the same way as the app keys.
+   - Secret: `db-migrate-credentials`.
+   - Refactor to a role × environment map, and use **`moved` blocks** so the existing `app-*` resources are renamed in state, not recreated. The plan must show no destroys for `app-*`.
+2. Apply needs the bootstrap (owner) profile. The owner's "Bootstrap" key is valid until 2027-10-10. **Delete it after the Phase 4 IAM work.**
+3. Test against dev:
+   - as `migrate-dev`: `CREATE TABLE` plus insert;
+   - as `app-dev`: select, insert and update on that table, while `CREATE TABLE` is still denied;
+   - then drop the test table.
+   - If `app-dev` can't use tables the migrator created, fall back to **option A**: give the app identity `ReadWrite` and run migrations at app startup.
+
+**Remaining in Phase 3:**
+- Plan and apply `infra/envs/prod` with the owner's approval, then verify it.
+- Write ADR 0009 (identity plane split: workload and migration identities in bootstrap; no private network because Serverless SQL is public with TLS and IAM; secrets live in state in the private bucket).
+- Runbook: database smoke test, workload key rotation, viewing logs in Cockpit, and **rotating the admin key, which expires 2026-12-31**.
+- Have the owner check actual cost in the console (admin has no billing access). Then update this file and mark Phase 3 complete.
+
+**Carry into Phase 4:**
+- Env plans print `alert_emails` (the Gmail address). Hide it before plans run in public CI logs.
+- CI identities (`ci-dev`, `ci-prod`, per ADR 0005) go in bootstrap.
+
+**Owner to-dos:**
+- **At GoDaddy**, delete the `cloud` NS records (×2) and the `_scaleway-challenge` TXT record.
+- Optional: fix the MX typo (`alt4aspmx…` should be `alt4.aspmx…`), and add DKIM and DMARC records for Workspace mail.

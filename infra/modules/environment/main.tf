@@ -10,14 +10,7 @@ variable "project_id" {
   type = string
 }
 
-variable "dns_zone" {
-  type = string
-}
 
-variable "hostname_suffix" {
-  description = "Appended to app/api labels: '' for prod, '-dev' for dev."
-  type        = string
-}
 
 variable "db_credentials" {
   description = "{user, password} for Serverless SQL, from Secret Manager."
@@ -49,9 +42,7 @@ variable "db_max_cpu" {
 }
 
 locals {
-  name     = "platform-${var.env}"
-  web_host = "app${var.hostname_suffix}.${var.dns_zone}"
-  api_host = "api${var.hostname_suffix}.${var.dns_zone}"
+  name = "platform-${var.env}"
 
   # endpoint looks like postgres://host:5432/db?sslmode=require
   database_url = format("postgres://%s:%s@%s",
@@ -86,12 +77,9 @@ module "api" {
   cpu_limit       = 280
   memory_limit_mb = 512
   max_scale       = var.max_scale
-  dns_zone        = var.dns_zone
-  hostname_label  = "api${var.hostname_suffix}"
 
   environment_variables = {
-    APP_ENV        = var.env
-    ALLOWED_ORIGIN = "https://${local.web_host}" # CORS: only our frontend
+    APP_ENV = var.env
   }
   secret_environment_variables = {
     DATABASE_URL = local.database_url
@@ -99,17 +87,18 @@ module "api" {
 }
 
 module "web" {
-  source         = "../service"
-  name           = "web"
-  namespace_id   = scaleway_container_namespace.this.id
-  image          = var.placeholder_image
-  max_scale      = var.max_scale
-  dns_zone       = var.dns_zone
-  hostname_label = "app${var.hostname_suffix}"
+  source       = "../service"
+  name         = "web"
+  namespace_id = scaleway_container_namespace.this.id
+  image        = var.placeholder_image
+  max_scale    = var.max_scale
 
+  # web serves the frontend AND forwards /api/* to the api container, so the
+  # browser only ever talks to one origin: no CORS, and only web needs to know
+  # where api lives (avoids a web<->api dependency cycle).
   environment_variables = {
-    APP_ENV = var.env
-    API_URL = "https://${local.api_host}"
+    APP_ENV      = var.env
+    API_UPSTREAM = module.api.url
   }
 }
 

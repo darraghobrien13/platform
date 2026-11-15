@@ -14,6 +14,7 @@ We need a simple full-stack app with a frontend, an API, and Postgres. The owner
 - **Packaging:** one OCI image per service, built in CI and tagged with the git SHA.
   - Config comes from environment variables, and secrets are injected at runtime from Secret Manager.
   - Every service exposes `/healthz`.
+  - The `web` container serves the frontend and forwards `/api/*` to `api` (see [0008](0008-builtin-urls-no-custom-domain.md)). Its upstream comes from the `API_UPSTREAM` environment variable.
   - These conventions keep a future move to Kubernetes (Kapsule) a change in where things are hosted, not an app rewrite.
 
 ## Alternatives considered

@@ -1,6 +1,6 @@
 # 0006. Environments, region and DNS
 
-- Status: Accepted
+- Status: Accepted. The DNS part is superseded by [0008](0008-builtin-urls-no-custom-domain.md).
 - Date: 2026-10-10
 
 ## Context
