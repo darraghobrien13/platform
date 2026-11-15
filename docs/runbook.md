@@ -104,6 +104,8 @@ The bootstrap stack manages IAM and projects. Your day-to-day admin key delibera
 - **App:** merge a change under `app/`.
   1. The `app` workflow builds the images once, deploys them to dev and smoke-tests them.
   2. Then it waits for your approval for prod, which receives the *same* images, copied rather than rebuilt.
+- `infra` applies on `main` only when infrastructure files change. App-only merges don't queue a prod approval.
+- **Approving prod:** Actions → the run → **Review deployments** → **tick `prod`** → **Approve and deploy**. A job you don't approve just waits, for up to 30 days, and can be cancelled.
 - **Never** run `infra/bootstrap` or `infra/github` in CI. They stay local and break-glass.
 
 ## Roll back
