@@ -80,12 +80,12 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 - [x] Phase 0: Discovery
 - [x] Phase 1: Decisions (ADRs 0001–0007)
 - [x] Phase 2: Foundations
-- [ ] Phase 3: Infrastructure as code (everything built; waiting on the owner's cost check)
+- [x] Phase 3: Infrastructure as code (finished 2026-11-15)
 - [ ] Phase 4: CI/CD
 - [ ] Phase 5: Web app
 - [ ] Phase 6: Walkthrough
 
-## Phase 3 progress (updated 2026-11-15, resume here)
+## Phase 3 summary (complete)
 **Done and verified:**
 - **`infra/bootstrap/workloads.tf`:** IAM apps `app-dev` and `app-prod`.
   - Permission: `ServerlessSQLDatabaseDataReadWrite`, scoped to their own project.
@@ -114,7 +114,7 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
   - The database `platform-prod` passed the same 9-step permission smoke test as dev.
 - ADR 0009 is written. The runbook covers DB identities and the smoke test, viewing logs in Cockpit, and admin key rotation.
 
-**Remaining in Phase 3:** the owner checks the actual cost (console → Billing, as owner). Then mark Phase 3 complete.
+**Cost:** October 2026 came to **€2.71**, with dev only (prod went live on 2026-11-15). The per-product breakdown is still to be checked; the suspect is Serverless SQL. Budget alerts start at €5.
 
 **Carry into Phase 4:**
 - **Rotate the admin key before 2026-12-31** (runbook).
