@@ -1,0 +1,30 @@
+{
+  "name": "platform-app",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "api",
+    "web"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "npm run dev -w api & npm run dev -w web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.8",
+    "@types/node": "^24",
+    "esbuild": "^0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

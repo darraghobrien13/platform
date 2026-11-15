@@ -7,3 +7,4 @@ brew "jq"           # JSON on the command line
 brew "colima"       # open-source container runtime (Linux VM)
 brew "docker"       # docker CLI (talks to Colima)
 brew "docker-buildx"
+brew "docker-compose" # local Postgres for app dev + integration tests
