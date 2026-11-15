@@ -5,9 +5,18 @@
 name: infra
 
 on:
+  # PRs: always run (iac-scan + plans are required checks on main).
   pull_request:
+  # main: only apply when something infra-related changed, so app-only merges
+  # don't queue a no-op prod approval.
   push:
     branches: [main]
+    paths:
+      - "infra/envs/**"
+      - "infra/modules/**"
+      - ".github/workflows/infra.yml"
+      - ".github/workflows/tofu-apply.yml"
+      - "mise.toml"
   workflow_dispatch:
 
 permissions:
