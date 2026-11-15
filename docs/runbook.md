@@ -11,6 +11,7 @@ These are common operations. Sections get filled in as each phase lands.
 | M3 | Phase 2 | Scaleway sign-up, identity check, payment method, owner MFA | Legal and billing identity |
 | M4 | Phase 2 | Admin user: first login, change the emailed password, enrol MFA | The user itself is created in code (`infra/bootstrap`), but password change and MFA enrolment are interactive |
 | M5 | Phase 2 | Temporary owner API key for the first bootstrap apply | Something has to exist before IaC can authenticate |
+| M6 | Phase 3 | (Undone) External-domain TXT and `cloud` NS records at GoDaddy. **Remove them.** | GoDaddy's DNS API isn't available on this account; see ADR 0008 |
 
 Exact steps for each are in the sections below.
 
@@ -102,10 +103,26 @@ The bootstrap stack manages IAM and projects. Your day-to-day admin key delibera
 *Phase 4/5.*
 
 ## View logs
-*Phase 3 (Cockpit).*
+Scaleway sends the logs and metrics of its own products (Serverless Containers, Serverless SQL) to **Cockpit** automatically. This is free at default retention: 7 days for logs, 31 for metrics.
+1. Log in to the console as `darragh-admin` and select the project (`platform-dev` or `platform-prod`).
+2. Go to **Cockpit → Open dashboards**. Grafana opens, signed in with your Scaleway identity.
+3. Open the **Serverless Containers** dashboards, which show request rate, cold starts, CPU and memory. For a container's **logs**, use **Explore → Scaleway Logs** and filter on the container name (`web` or `api`). The dashboard names may differ slightly (verify).
+4. Shortcut: in the console, open the container itself (Serverless → Containers → `platform-<env>` → `api`) and use its **Logs** or **Metrics** tab.
+
+Alerts go to the email set in `alert_emails`, through each project's Cockpit alert manager (`infra/modules/environment`).
 
 ## Rotate CI keys
 *Phase 4.*
+
+## Rotate the admin API key (`darragh-admin-laptop` expires 2026-12-31)
+1. Log in as `darragh-admin`. Under **IAM → API keys → Generate**, choose:
+   - Bearer: *Myself*
+   - Expiry: 90 days
+   - **Preferred Object Storage project: `platform-mgmt`**
+   - Description: `darragh-admin-laptop-<yyyymm>`
+2. In your own terminal, run `scw init -p admin` and paste the new keys. This overwrites the profile.
+3. Check it works: `scw account project list` and, in any stack, `tofu plan`.
+4. Delete the old key in the console. Check that `scw iam api-key list` shows only the new one.
 
 ## Destroy everything
 *Phase 6.*
