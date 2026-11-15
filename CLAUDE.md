@@ -97,18 +97,14 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
   - The database `platform-dev` (Postgres 16.15) accepts connections as `app-dev`.
 - **Custom domains removed** (ADR 0008). The `infra/dns` stack and its state are deleted.
 
-**Next: option B, chosen by the owner** (separate migration identity):
-1. In `infra/bootstrap/workloads.tf`, add a `migrate-<env>` IAM app per environment.
-   - Permission: `ServerlessSQLDatabaseReadWrite`, on its own project.
-   - Key rotates the same way as the app keys.
-   - Secret: `db-migrate-credentials`.
-   - Refactor to a role × environment map, and use **`moved` blocks** so the existing `app-*` resources are renamed in state, not recreated. The plan must show no destroys for `app-*`.
-2. Apply needs the bootstrap (owner) profile. The owner's "Bootstrap" key is valid until 2027-10-10. **Delete it after the Phase 4 IAM work.**
-3. Test against dev:
-   - as `migrate-dev`: `CREATE TABLE` plus insert;
-   - as `app-dev`: select, insert and update on that table, while `CREATE TABLE` is still denied;
-   - then drop the test table.
-   - If `app-dev` can't use tables the migrator created, fall back to **option A**: give the app identity `ReadWrite` and run migrations at app startup.
+- **Separate migration identity (option B): done and tested on 2026-11-15.**
+  - `migrate-dev` and `migrate-prod` have `ServerlessSQLDatabaseReadWrite` on their own project. Their secret is `db-migrate-credentials`, and keys rotate every 180 days.
+  - The `app-*` resources were moved with `moved` blocks; nothing was recreated.
+  - Test results:
+    - `migrate-dev` can CREATE TABLE and INSERT.
+    - `app-dev` can SELECT, INSERT, UPDATE and DELETE on tables the migrator created.
+    - `app-dev` is denied CREATE TABLE (`permission denied for schema public`) and DROP (`must be owner`).
+  - **Phase 4/5 must** run migrations as `migrate-<env>` in the deploy job *before* the new app version starts. The app itself never migrates.
 
 **Remaining in Phase 3:**
 - Plan and apply `infra/envs/prod` with the owner's approval, then verify it.

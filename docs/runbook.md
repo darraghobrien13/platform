@@ -76,6 +76,25 @@ The bootstrap stack manages IAM and projects. Your day-to-day admin key delibera
 4. In `infra/bootstrap`: run `tofu plan`, review it, then run `tofu apply`.
 5. Delete the key straight away. Close the terminal.
 
+## Database identities and smoke test
+- **Two identities per environment.** Both are IAM applications, because Serverless SQL logs in with an IAM application ID plus the secret of its API key:
+  - `app-<env>`: reads and writes rows only. Its login is in Secret Manager as `db-credentials`.
+  - `migrate-<env>`: can also change the schema. Its login is in `db-migrate-credentials`. **Only the deploy pipeline uses it.**
+- **Reading a login** (with the admin profile; never paste it anywhere):
+  ```sh
+  P=<env project id>
+  ID=$(scw secret secret list project-id=$P name=db-credentials -o json | jq -r '.[0].id')
+  scw secret version access secret-id=$ID revision=latest -o json | jq -r .data | base64 -d
+  ```
+- **Smoke test:** connect as each identity and check that:
+  - `migrate` can CREATE TABLE;
+  - `app` can do CRUD on that table;
+  - `app` gets `permission denied` for CREATE and DROP;
+  - then drop the test table.
+
+  Last run: dev, 2026-11-15, all passed. The first connection after idle takes about 3–5s (cold start).
+- **Rotation:** the keys rotate automatically every 180 days. The first `infra/bootstrap` apply after the rotation date replaces the key and the secret version; this needs break-glass. Then re-apply `infra/envs/<env>` so the containers get the new `DATABASE_URL`. Each key keeps working for 30 days after its rotation date.
+
 ## Deploy
 *Phase 4.*
 
