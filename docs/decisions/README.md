@@ -10,7 +10,7 @@ Each significant decision gets a short ADR, so a future reader, human or Claude,
 | [0004](0004-cicd-github-actions.md) | CI/CD: GitHub Actions | Accepted |
 | [0005](0005-ci-credentials-scoped-api-keys.md) | CI credentials: scoped, expiring API keys (no OIDC yet) | Accepted (amended by 0010) |
 | [0006](0006-environments-region-dns.md) | Environments, region and DNS | Accepted (DNS part superseded by 0008) |
-| [0007](0007-app-stack-typescript.md) | App stack: TypeScript end to end | Proposed |
+| [0007](0007-app-stack-typescript.md) | App stack: TypeScript end to end (Hono, Drizzle, React, Zod, Vitest, Biome) | Accepted |
 | [0008](0008-builtin-urls-no-custom-domain.md) | Built-in Scaleway URLs instead of a custom domain; `web` forwards `/api` | Accepted |
 | [0009](0009-identity-split-and-public-endpoints.md) | Identities in bootstrap (app vs. migrate DB roles); public endpoints, no private network | Accepted |
 | [0010](0010-pipeline-design.md) | Pipelines: plan/apply identity split, state bucket policy, build once and promote | Accepted |

@@ -1,0 +1,12 @@
+# Local Postgres for development and integration tests: `npm run db:up`.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: notes
+    ports: ["5433:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      retries: 15

@@ -1,0 +1,26 @@
+{
+  "name": "@platform/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "DATABASE_URL=${DATABASE_URL:-postgres://postgres:localdev@localhost:5433/notes} tsx watch src/server.ts",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "DATABASE_URL=${DATABASE_URL:-postgres://postgres:localdev@localhost:5433/notes} tsx src/migrate.ts",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.8",
+    "@hono/zod-validator": "0.9.1",
+    "@platform/shared": "*",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.18",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
+    "tsx": "4.23.15"
+  }
+}

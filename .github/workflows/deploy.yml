@@ -59,7 +59,7 @@ jobs:
         run: |
           for svc in api web; do
             img="$REG/$svc:$TAG"
-            docker build --build-arg APP_VERSION="$TAG" -t "$img" "app/$svc"
+            docker build --build-arg APP_VERSION="$TAG" -t "$img" -f "app/$svc/Dockerfile" app
             trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$img"
             docker push "$img"
           done
@@ -77,13 +77,20 @@ jobs:
         run: |
           for svc in api web; do crane digest "$REG/$svc:$TAG"; done
 
-      - name: Migrate (as migrate-${{ inputs.env }})
+      - name: Migrate (as migrate-${{ inputs.env }}, before the new version starts)
         run: |
           sid=$(scw secret secret list project-id="$PROJECT_ID" name=db-migrate-credentials -o json | jq -er '.[0].id')
           creds=$(scw secret version access secret-id="$sid" revision=latest -o json | jq -r .data | base64 -d)
-          echo "::add-mask::$(jq -r .password <<<"$creds")"
-          jq -e '.user and .password' <<<"$creds" >/dev/null
-          echo "migrate credentials OK; no migrations yet (the app's migrate step arrives in Phase 5)"
+          user=$(jq -er .user <<<"$creds"); pass=$(jq -er .password <<<"$creds")
+          echo "::add-mask::$pass"
+          endpoint=$(scw sdb-sql database list project-id="$PROJECT_ID" name="platform-$ENV" -o json | jq -er '.[0].endpoint')
+          # endpoint = postgres://host:5432/db?sslmode=require -> insert the migrate login
+          url="postgres://$user:$pass@${endpoint#postgres://}"
+          url="${url/sslmode=require/sslmode=verify-full}" # encrypt + verify the server cert
+          echo "::add-mask::$url"
+          # Run the migrations that ship INSIDE the image being deployed.
+          docker pull -q "$REG/api:$TAG" >/dev/null
+          docker run --rm -e DATABASE_URL="$url" "$REG/api:$TAG" node dist/migrate.js
 
       - name: Deploy api, then web
         run: |
@@ -118,6 +125,13 @@ jobs:
           check "$API_URL/healthz" api
           check "$WEB_URL/healthz" web
           check "$WEB_URL/api/healthz" api   # through web's /api proxy
+          # One real round-trip to the database (as app-<env>), through the proxy.
+          for i in $(seq 1 10); do
+            db=$(curl -fsS -m 45 "$WEB_URL/api/health/db" || true)
+            jq -e '.status=="ok"' <<<"$db" >/dev/null 2>&1 && { echo "OK database -> $db"; break; }
+            sleep 6
+          done
+          jq -e '.status=="ok"' <<<"$db" >/dev/null 2>&1 || { echo "FAILED database check -> $db"; exit 1; }
           {
             echo "### $ENV: deployed \`$TAG\` (${{ inputs.mode }})"
             echo "- web: $WEB_URL"

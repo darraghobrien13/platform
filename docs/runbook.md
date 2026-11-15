@@ -77,6 +77,13 @@ The bootstrap stack manages IAM and projects. Your day-to-day admin key delibera
 4. In `infra/bootstrap`: run `tofu plan`, review it, then run `tofu apply`.
 5. Delete the key straight away. Close the terminal.
 
+## Schema changes (migrations)
+1. Edit `app/api/src/schema.ts`, then run `npm run db:generate -w api -- --name <change>`. Review the generated SQL in `app/api/drizzle/` and commit it with the code.
+2. CI runs the integration tests against a fresh Postgres, which applies **all** migrations from scratch.
+3. On deploy, the pipeline runs `node dist/migrate.js` **inside the new api image** as `migrate-<env>`, *before* switching containers. Applied migrations are recorded in the `drizzle.__drizzle_migrations` table.
+4. **Keep migrations backward-compatible.** The old version keeps serving until the new one is ready, and a rollback runs old code against the new schema. Add a column, deploy, then remove the old one in a later release.
+5. **There's no automatic "down" migration.** To undo a change, write a new forward migration.
+
 ## Database identities and smoke test
 - **Two identities per environment.** Both are IAM applications, because Serverless SQL logs in with an IAM application ID plus the secret of its API key:
   - `app-<env>`: reads and writes rows only. Its login is in Secret Manager as `db-credentials`.

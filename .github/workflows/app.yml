@@ -23,6 +23,34 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: notes
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Unit + integration tests (real Postgres 16)
+        run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/notes
+      - name: Dependency vulnerability scan
+        run: trivy fs --scanners vuln --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed .
+
   build-check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -32,12 +60,13 @@ jobs:
       - name: Build and scan (no push)
         run: |
           for svc in api web; do
-            docker build -t "local/$svc:pr" "app/$svc"
+            docker build -t "local/$svc:pr" -f "app/$svc/Dockerfile" app
             trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "local/$svc:pr"
           done
 
   deploy-dev:
     if: github.event_name == 'push'
+    needs: test
     uses: ./.github/workflows/deploy.yml
     with:
       env: dev

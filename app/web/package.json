@@ -1,0 +1,27 @@
+{
+  "name": "@platform/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "build": "vite build && node build-server.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.8",
+    "@platform/shared": "*",
+    "hono": "4.13.18",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@platform/api": "*",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "jsdom": "31.0.1",
+    "vite": "8.3.8"
+  }
+}
