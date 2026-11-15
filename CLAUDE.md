@@ -23,9 +23,10 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 | 0003 | **Public GitHub repo, GitHub Free.** Ruleset on `main`, environments `dev` and `prod` (prod needs approval), secret scanning and push protection. |
 | 0004 | **GitHub Actions** on GitHub-hosted runners. Plan on PR, apply to dev on merge, apply to prod after approval. |
 | 0005 | **Scoped, expiring API keys** for CI: one IAM Application per environment, rotated every ≤90 days. A deliberate deviation from OIDC. |
-| 0006 | Projects `dev` and `prod` in one Organization. Region `fr-par`. `dev.` and `app.darragh.email`. |
+| 0006 | Projects `dev` and `prod` in one Organization. Region `fr-par`. (The DNS part is superseded by 0008.) |
 | 0007 | TypeScript end to end (Fastify or Hono API, React + Vite, Drizzle or Kysely, Vitest). Status: proposed. |
 | 0008 | **Built-in Scaleway URLs, no custom domain.** Scaleway deletes external domains whose nameservers aren't moved within 14 days. `web` forwards `/api/*` to `api`: one origin, no CORS. |
+| 0009 | **Identity plane in bootstrap.** `app-<env>` (rows only) and `migrate-<env>` (schema) DB identities. Public endpoints with TLS and IAM; no private network. |
 
 ## Conventions
 - **Never commit** secrets, keys, `*.tfstate*`, `.terraform/`, or `*.tfvars` that contain secrets. The repo is **public**, so mark sensitive values `sensitive = true` and never print them in plans or logs.
@@ -50,7 +51,7 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
     | `platform-prod` | `1fb17fcd-e4a4-4a25-aba3-99cca161c048` |
 
   - **State:** bucket `darragh-platform-tfstate`, in mgmt, versioned, with `use_lockfile` locking (tested).
-    - State keys: `bootstrap/`, `github/`, `envs/dev/` (`envs/prod/` not yet applied).
+    - State keys: `bootstrap/`, `github/`, `envs/dev/`, `envs/prod/`.
   - **Identities:**
     - The owner is used only for billing and break-glass.
     - Day-to-day work uses IAM user `darragh-admin` (group `platform-admins`), with CLI profile `admin`.
@@ -79,12 +80,12 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 - [x] Phase 0: Discovery
 - [x] Phase 1: Decisions (ADRs 0001–0007)
 - [x] Phase 2: Foundations
-- [ ] Phase 3: Infrastructure as code (in progress)
+- [ ] Phase 3: Infrastructure as code (everything built; waiting on the owner's cost check)
 - [ ] Phase 4: CI/CD
 - [ ] Phase 5: Web app
 - [ ] Phase 6: Walkthrough
 
-## Phase 3 progress (updated 2026-11-08, resume here)
+## Phase 3 progress (updated 2026-11-15, resume here)
 **Done and verified:**
 - **`infra/bootstrap/workloads.tf`:** IAM apps `app-dev` and `app-prod`.
   - Permission: `ServerlessSQLDatabaseDataReadWrite`, scoped to their own project.
@@ -97,26 +98,27 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
   - The database `platform-dev` (Postgres 16.15) accepts connections as `app-dev`.
 - **Custom domains removed** (ADR 0008). The `infra/dns` stack and its state are deleted.
 
-**Next: option B, chosen by the owner** (separate migration identity):
-1. In `infra/bootstrap/workloads.tf`, add a `migrate-<env>` IAM app per environment.
-   - Permission: `ServerlessSQLDatabaseReadWrite`, on its own project.
-   - Key rotates the same way as the app keys.
-   - Secret: `db-migrate-credentials`.
-   - Refactor to a role × environment map, and use **`moved` blocks** so the existing `app-*` resources are renamed in state, not recreated. The plan must show no destroys for `app-*`.
-2. Apply needs the bootstrap (owner) profile. The owner's "Bootstrap" key is valid until 2027-10-10. **Delete it after the Phase 4 IAM work.**
-3. Test against dev:
-   - as `migrate-dev`: `CREATE TABLE` plus insert;
-   - as `app-dev`: select, insert and update on that table, while `CREATE TABLE` is still denied;
-   - then drop the test table.
-   - If `app-dev` can't use tables the migrator created, fall back to **option A**: give the app identity `ReadWrite` and run migrations at app startup.
+- **Separate migration identity (option B): done and tested on 2026-11-15.**
+  - `migrate-dev` and `migrate-prod` have `ServerlessSQLDatabaseReadWrite` on their own project. Their secret is `db-migrate-credentials`, and keys rotate every 180 days.
+  - The `app-*` resources were moved with `moved` blocks; nothing was recreated.
+  - Test results:
+    - `migrate-dev` can CREATE TABLE and INSERT.
+    - `app-dev` can SELECT, INSERT, UPDATE and DELETE on tables the migrator created.
+    - `app-dev` is denied CREATE TABLE (`permission denied for schema public`) and DROP (`must be owner`).
+  - **Phase 4/5 must** run migrations as `migrate-<env>` in the deploy job *before* the new app version starts. The app itself never migrates.
 
-**Remaining in Phase 3:**
-- Plan and apply `infra/envs/prod` with the owner's approval, then verify it.
-- Write ADR 0009 (identity plane split: workload and migration identities in bootstrap; no private network because Serverless SQL is public with TLS and IAM; secrets live in state in the private bucket).
-- Runbook: database smoke test, workload key rotation, viewing logs in Cockpit, and **rotating the admin key, which expires 2026-12-31**.
-- Have the owner check actual cost in the console (admin has no billing access). Then update this file and mark Phase 3 complete.
+- **`infra/envs/prod`: applied 2026-11-15.** `tofu plan` shows no changes.
+  - `web`: https://platformprod7d213a3e-web.functions.fnc.fr-par.scw.cloud
+  - `api`: https://platformprod7d213a3e-api.functions.fnc.fr-par.scw.cloud
+  - Both return 200.
+  - The database `platform-prod` passed the same 9-step permission smoke test as dev.
+- ADR 0009 is written. The runbook covers DB identities and the smoke test, viewing logs in Cockpit, and admin key rotation.
+
+**Remaining in Phase 3:** the owner checks the actual cost (console → Billing, as owner). Then mark Phase 3 complete.
 
 **Carry into Phase 4:**
+- **Rotate the admin key before 2026-12-31** (runbook).
+- The deploy job runs migrations as `migrate-<env>` before starting the new app version.
 - Env plans print `alert_emails` (the Gmail address). Hide it before plans run in public CI logs.
 - CI identities (`ci-dev`, `ci-prod`, per ADR 0005) go in bootstrap.
 

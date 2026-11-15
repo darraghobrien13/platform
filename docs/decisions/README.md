@@ -12,6 +12,7 @@ Each significant decision gets a short ADR, so a future reader, human or Claude,
 | [0006](0006-environments-region-dns.md) | Environments, region and DNS | Accepted (DNS part superseded by 0008) |
 | [0007](0007-app-stack-typescript.md) | App stack: TypeScript end to end | Proposed |
 | [0008](0008-builtin-urls-no-custom-domain.md) | Built-in Scaleway URLs instead of a custom domain; `web` forwards `/api` | Accepted |
+| [0009](0009-identity-split-and-public-endpoints.md) | Identities in bootstrap (app vs. migrate DB roles); public endpoints, no private network | Accepted |
 
 Figures marked **(verify)** were not confirmed from a primary source during Phase 1. They are re-checked in Phase 2.
 
