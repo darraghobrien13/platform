@@ -36,3 +36,8 @@ variable "budget_alert_thresholds" {
   type        = list(number)
   default     = [20, 50, 80, 100]
 }
+
+variable "owner_email" {
+  description = "Email of the Organization owner login; named explicitly in the state bucket policy."
+  type        = string
+}

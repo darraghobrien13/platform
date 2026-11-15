@@ -1,0 +1,53 @@
+# Reusable: plan + apply one environment. The job declares `environment:`, so
+# GitHub releases that environment's secrets (its own ci-<env> key) only on
+# main, and for prod only after a required reviewer approves.
+name: tofu-apply
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: apply (${{ inputs.env }})
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.env }}
+    concurrency:
+      group: env-${{ inputs.env }} # one infra apply OR app deploy at a time per environment
+      cancel-in-progress: false
+    env:
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
+      SCW_DEFAULT_ORGANIZATION_ID: ${{ vars.SCW_ORGANIZATION_ID }}
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
+    defaults:
+      run:
+        working-directory: infra/envs/${{ inputs.env }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - run: tofu init
+      - name: tofu plan
+        run: |
+          tofu plan -no-color -out=tfplan | tee plan.txt
+          {
+            echo "### ${{ inputs.env }}: $(grep -E '^(Plan:|No changes)' plan.txt)"
+            echo '```'; sed -n '/OpenTofu will perform/,$p' plan.txt | head -300; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The plan file holds sensitive values in plain text: apply it in this job
+      # and never upload it as an artifact (artifacts on a public repo are public).
+      - name: tofu apply (exactly the plan above)
+        run: tofu apply -no-color tfplan
+      - name: Remove plan file
+        if: always()
+        run: rm -f tfplan

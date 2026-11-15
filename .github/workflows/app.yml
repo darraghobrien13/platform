@@ -1,0 +1,64 @@
+# App pipeline (ADR 0010): build once, deploy to dev, promote the same image to
+# prod after approval. Manual "Run workflow" = rollback to any earlier SHA.
+name: app
+
+on:
+  pull_request:
+    paths: ["app/**", ".github/workflows/app.yml", ".github/workflows/deploy.yml"]
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/app.yml", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Environment to roll back
+        type: choice
+        options: [dev, prod]
+      ref:
+        description: Git SHA (12+ chars) of a build already deployed before
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - name: Build and scan (no push)
+        run: |
+          for svc in api web; do
+            docker build -t "local/$svc:pr" "app/$svc"
+            trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "local/$svc:pr"
+          done
+
+  deploy-dev:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      env: dev
+      mode: build
+      ref: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-prod:
+    needs: deploy-dev
+    uses: ./.github/workflows/deploy.yml
+    with:
+      env: prod
+      mode: promote
+      ref: ${{ github.sha }}
+    secrets: inherit
+
+  rollback:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      env: ${{ inputs.env }}
+      mode: rollback
+      ref: ${{ inputs.ref }}
+    secrets: inherit

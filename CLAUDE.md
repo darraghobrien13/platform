@@ -27,6 +27,7 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 | 0007 | TypeScript end to end (Fastify or Hono API, React + Vite, Drizzle or Kysely, Vitest). Status: proposed. |
 | 0008 | **Built-in Scaleway URLs, no custom domain.** Scaleway deletes external domains whose nameservers aren't moved within 14 days. `web` forwards `/api/*` to `api`: one origin, no CORS. |
 | 0009 | **Identity plane in bootstrap.** `app-<env>` (rows only) and `migrate-<env>` (schema) DB identities. Public endpoints with TLS and IAM; no private network. |
+| 0010 | **Pipelines:** `ci-plan` (read-only, PRs), plus `ci-dev` and `ci-prod` (apply, environment secrets). The state bucket policy limits each to its own prefix. Images are built once and promoted; rollback is by SHA. |
 
 ## Conventions
 - **Never commit** secrets, keys, `*.tfstate*`, `.terraform/`, or `*.tfvars` that contain secrets. The repo is **public**, so mark sensitive values `sensitive = true` and never print them in plans or logs.

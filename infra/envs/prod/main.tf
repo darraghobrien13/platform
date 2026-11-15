@@ -2,30 +2,28 @@ locals {
   env = "prod"
 }
 
-variable "alert_emails" {
-  description = "Where Cockpit alerts go. Set in terraform.tfvars (gitignored) or TF_VAR_alert_emails."
-  type        = list(string)
+variable "alert_email" {
+  description = "Where Cockpit alerts go. Locally: terraform.tfvars (gitignored). CI: TF_VAR_alert_email from a secret."
+  type        = string
+  sensitive   = true # repo is public: keep it out of plan output / CI logs
 }
 
-# Shared lookup: project IDs (bootstrap).
-data "terraform_remote_state" "bootstrap" {
-  backend = "s3"
-  config  = merge(local.state_backend, { key = "bootstrap/terraform.tfstate" })
+# Look up this environment's project by name. (Previously read from bootstrap
+# state, but that state holds credentials, so CI must never need to read it.)
+# A separate provider alias avoids a cycle: the main provider's project_id
+# depends on this lookup.
+provider "scaleway" {
+  alias  = "lookup"
+  region = "fr-par"
 }
 
+data "scaleway_account_project" "this" {
+  provider = scaleway.lookup
+  name     = "platform-${local.env}"
+}
 
 locals {
-  state_backend = {
-    bucket                      = "darragh-platform-tfstate"
-    region                      = "fr-par"
-    endpoints                   = { s3 = "https://s3.fr-par.scw.cloud" }
-    skip_credentials_validation = true
-    skip_region_validation      = true
-    skip_requesting_account_id  = true
-    skip_metadata_api_check     = true
-    skip_s3_checksum            = true
-  }
-  project_id = data.terraform_remote_state.bootstrap.outputs.project_ids[local.env]
+  project_id = data.scaleway_account_project.this.id
 }
 
 # Every resource lands in this environment's project by default.
@@ -47,7 +45,7 @@ module "environment" {
 
   env            = local.env
   project_id     = local.project_id
-  alert_emails   = var.alert_emails
+  alert_email    = var.alert_email
   db_credentials = jsondecode(base64decode(data.scaleway_secret_version.db_credentials.data))
 }
 
@@ -65,4 +63,9 @@ output "registry_endpoint" {
 
 output "database_endpoint" {
   value = module.environment.database_endpoint
+}
+
+output "namespace_id" {
+  description = "Used by the app pipeline to find the containers."
+  value       = module.environment.namespace_id
 }

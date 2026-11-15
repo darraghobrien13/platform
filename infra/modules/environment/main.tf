@@ -21,8 +21,9 @@ variable "db_credentials" {
   sensitive = true
 }
 
-variable "alert_emails" {
-  type = list(string)
+variable "alert_email" {
+  type      = string
+  sensitive = true
 }
 
 variable "placeholder_image" {
@@ -107,11 +108,8 @@ module "web" {
 resource "scaleway_cockpit_alert_manager" "this" {
   project_id = var.project_id
 
-  dynamic "contact_points" {
-    for_each = var.alert_emails
-    content {
-      email = contact_points.value
-    }
+  contact_points {
+    email = var.alert_email
   }
 }
 

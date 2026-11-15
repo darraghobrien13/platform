@@ -6,3 +6,6 @@ node = "24.21.0"
 tflint = "0.64.0"
 gitleaks = "8.30.1"
 pre-commit = "4.6.2"
+trivy = "0.76.2"
+scaleway-cli = "2.66.0" # scw: deploys in CI
+crane = "0.22.1"        # copies images between registries (promotion)

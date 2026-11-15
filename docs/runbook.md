@@ -97,10 +97,19 @@ The bootstrap stack manages IAM and projects. Your day-to-day admin key delibera
 - **Rotation:** the keys rotate automatically every 180 days. The first `infra/bootstrap` apply after the rotation date replaces the key and the secret version; this needs break-glass. Then re-apply `infra/envs/<env>` so the containers get the new `DATABASE_URL`. Each key keeps working for 30 days after its rotation date.
 
 ## Deploy
-*Phase 4.*
+- **Infrastructure:** open a PR that changes `infra/envs` or `infra/modules`.
+  1. The `infra` workflow posts plans for dev and prod in the job summary. Review them.
+  2. Merge. Dev applies automatically.
+  3. **Prod waits.** Go to Actions → the `infra` run → **Review deployments → prod → Approve**, after checking the prod plan.
+- **App:** merge a change under `app/`.
+  1. The `app` workflow builds the images once, deploys them to dev and smoke-tests them.
+  2. Then it waits for your approval for prod, which receives the *same* images, copied rather than rebuilt.
+- **Never** run `infra/bootstrap` or `infra/github` in CI. They stay local and break-glass.
 
 ## Roll back
-*Phase 4/5.*
+- **App:** Actions → **app** → **Run workflow**. Choose the environment, and enter the SHA of an earlier deploy (12+ characters; it's shown in each run summary). That image is redeployed with no rebuild, and the smoke tests run. Prod still needs approval.
+  - From a terminal: `gh workflow run app.yml -f env=prod -f ref=<sha>`
+- **Infrastructure:** revert the PR (`git revert`, as a new PR) and go through the normal flow. The state bucket is versioned, so a corrupted state can be restored to an earlier object version (owner or admin only).
 
 ## View logs
 Scaleway sends the logs and metrics of its own products (Serverless Containers, Serverless SQL) to **Cockpit** automatically. This is free at default retention: 7 days for logs, 31 for metrics.
@@ -111,8 +120,19 @@ Scaleway sends the logs and metrics of its own products (Serverless Containers, 
 
 Alerts go to the email set in `alert_emails`, through each project's Cockpit alert manager (`infra/modules/environment`).
 
-## Rotate CI keys
-*Phase 4.*
+## Rotate CI keys (every 90 days; each key works for 14 days after its rotation date)
+1. Break-glass: in `infra/bootstrap`, run `tofu plan`. It shows `time_rotating.ci_key[...]` replacing the expired keys. Then apply.
+2. Push the new keys to GitHub without printing them, using the admin profile:
+   ```sh
+   K="$(cd infra/bootstrap && tofu output -json ci_keys)"; R=darraghobrien13/platform
+   jq -rj '."ci-plan".access_key' <<<"$K" | gh secret set SCW_PLAN_ACCESS_KEY -R $R
+   jq -rj '."ci-plan".secret_key' <<<"$K" | gh secret set SCW_PLAN_SECRET_KEY -R $R
+   for e in dev prod; do
+     jq -rj --arg k ci-$e '.[$k].access_key' <<<"$K" | gh secret set SCW_ACCESS_KEY -R $R --env $e
+     jq -rj --arg k ci-$e '.[$k].secret_key' <<<"$K" | gh secret set SCW_SECRET_KEY -R $R --env $e
+   done; unset K
+   ```
+3. Re-run the latest `infra` workflow to confirm the new keys work.
 
 ## Rotate the admin API key (`darragh-admin-laptop` expires 2026-12-31)
 1. Log in as `darragh-admin`. Under **IAM → API keys → Generate**, choose:

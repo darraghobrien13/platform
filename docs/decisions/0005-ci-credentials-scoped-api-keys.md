@@ -1,6 +1,6 @@
 # 0005. CI credentials: scoped, expiring Scaleway API keys
 
-- Status: Accepted (deliberate deviation from the original goal)
+- Status: Accepted (deliberate deviation from the original goal). Amended by [0010](0010-pipeline-design.md): there are three identities (`ci-plan`, `ci-dev`, `ci-prod`), plus a state bucket policy.
 - Date: 2026-10-10
 
 ## Context
