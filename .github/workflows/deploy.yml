@@ -89,7 +89,8 @@ jobs:
         run: |
           ns=$(scw container namespace list project-id="$PROJECT_ID" name="platform-$ENV" -o json | jq -er '.[0].id')
           for svc in api web; do
-            cid=$(scw container container list namespace-id="$ns" name="$svc" -o json | jq -er '.[0].id')
+            # (the API's name filter rejects names shorter than 4 chars, e.g. "api": filter with jq)
+            cid=$(scw container container list namespace-id="$ns" -o json | jq -er --arg n "$svc" '.[] | select(.name==$n) | .id')
             scw container container update "$cid" image="$REG/$svc:$TAG" >/dev/null
             for i in $(seq 1 60); do
               st=$(scw container container get "$cid" -o json | jq -r .status)
