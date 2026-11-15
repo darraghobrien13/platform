@@ -13,5 +13,5 @@ variable "repository" {
 variable "required_checks" {
   description = "CI job names that must pass before merging to main."
   type        = list(string)
-  default     = ["pre-commit", "secret-scan"]
+  default     = ["pre-commit", "secret-scan", "iac-scan", "plan (dev)", "plan (prod)"]
 }

@@ -65,6 +65,10 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 - **Local:** `Brewfile` for tools; `mise.toml` pins OpenTofu 1.13.1, Node 24.21.0, tflint, gitleaks and pre-commit.
 
 ## Gotchas learned
+- **Container lookup by name:** `scw container container list name=api` fails, because the name filter needs 4–34 characters. List the namespace's containers and select with `jq`.
+- **zsh `path` variable:** never name a shell variable `path` in zsh. It's tied to `$PATH`, and every command stops being found.
+- **Bucket policy:** once the state bucket has a policy, only the principals listed in it can use it. The owner can always edit the policy. New humans or identities that need state access must be added in `infra/bootstrap/ci.tf`.
+- **Plan files:** they contain sensitive values in plain text. Never upload them as artifacts; on a public repo, artifacts are public.
 - **External domains:** Scaleway **deletes an external domain** (and every zone under it) if its nameservers aren't moved to Scaleway within **14 days**. Delegating only a subdomain doesn't count. See ADR 0008.
 - **Credential lifetime cap:** the org caps credential lifetime at **1 year**. API keys created with no expiry get one anyway, which caused a perpetual replace diff. Workload keys rotate via `time_rotating`. Owner keys created with "1 day" chosen in the console have come out with a 1-year expiry, so check with `scw iam api-key list`.
 - **Serverless SQL permissions:** `ServerlessSQLDatabaseDataReadWrite` gives rows only. `CREATE TABLE` fails with `permission denied for schema public`.
@@ -82,7 +86,7 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 - [x] Phase 1: Decisions (ADRs 0001–0007)
 - [x] Phase 2: Foundations
 - [ ] Phase 3: Infrastructure as code (everything built; waiting on the owner's cost check)
-- [ ] Phase 4: CI/CD
+- [x] Phase 4: CI/CD (finished 2026-11-15)
 - [ ] Phase 5: Web app
 - [ ] Phase 6: Walkthrough
 
@@ -117,11 +121,36 @@ A learning cloud platform built end to end: IaC, CI/CD, and a full-stack app, wi
 
 **Remaining in Phase 3:** the owner checks the actual cost (console → Billing, as owner). Then mark Phase 3 complete.
 
-**Carry into Phase 4:**
-- **Rotate the admin key before 2026-12-31** (runbook).
-- The deploy job runs migrations as `migrate-<env>` before starting the new app version.
-- Env plans print `alert_emails` (the Gmail address). Hide it before plans run in public CI logs.
-- CI identities (`ci-dev`, `ci-prod`, per ADR 0005) go in bootstrap.
+## Phase 4 summary (complete)
+- **CI identities** (`infra/bootstrap/ci.tf`):
+  - `ci-plan` is read-only and stored as the repository secret `SCW_PLAN_*`.
+  - `ci-dev` and `ci-prod` are stored as environment secrets `SCW_*`. `ci-prod` can also read the dev registry.
+  - Keys rotate every 90 days, with 14 days' grace.
+  - Also in GitHub: the repository secret `ALERT_EMAIL` and the variable `SCW_ORGANIZATION_ID`.
+- **State bucket policy:** the owner and `darragh-admin` have full access; each CI identity reaches only its own `envs/` prefix. 16 of 16 allow/deny cases were tested.
+- **`infra.yml` / `tofu-apply.yml`:**
+  - PR: `iac-scan` plus `plan (dev)` and `plan (prod)` with the read-only key. These are **required checks**.
+  - `main` (only when infrastructure files change): apply dev, then prod after approval.
+- **`app.yml` / `deploy.yml`:**
+  - Build once and push to dev with the 12-character SHA tag.
+  - Check the migrate credentials, deploy `api` then `web`, and smoke-test `/healthz`, including the version and the web→`/api` proxy.
+  - Prod, after approval: **copy the same image with crane**. The digests were verified to be identical.
+  - Rollback: "Run workflow" with an environment and a SHA. Tested on dev: rolled back to `6187631af23f`, then forward to `5cd8d52f8f45`.
+- **Placeholder services** live in `app/api` and `app/web`: Node's standard library only, with `apk upgrade`, and npm/yarn/corepack removed so Trivy passes.
+- **Live URLs:**
+
+  | | `web` | `api` |
+  |---|---|---|
+  | dev | https://platformdevc2a6ec33-web.functions.fnc.fr-par.scw.cloud | https://platformdevc2a6ec33-api.functions.fnc.fr-par.scw.cloud |
+  | prod | https://platformprod7d213a3e-web.functions.fnc.fr-par.scw.cloud | https://platformprod7d213a3e-api.functions.fnc.fr-par.scw.cloud |
+
+**Next: Phase 5 (web app).** Show a short plan first.
+- Replace `app/api` with the real TypeScript API: Fastify or Hono, Drizzle or Kysely, Vitest, and `/healthz` that never touches the database.
+- Replace `app/web` with React + Vite, served by a small server that keeps the `/api/*` proxy.
+- Make the deploy job's **migrate step real**: run migrations as `migrate-<env>`, before the new version starts.
+- Use multi-stage Dockerfiles that keep the runtime free of npm.
+- **Rotate the admin key before 2026-12-31.**
+- **Delete the owner "Bootstrap" key**, valid until 2027-10-10, once the owner is happy.
 
 **Owner to-dos:**
 - **At GoDaddy**, delete the `cloud` NS records (×2) and the `_scaleway-challenge` TXT record.
