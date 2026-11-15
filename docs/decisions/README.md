@@ -8,11 +8,12 @@ Each significant decision gets a short ADR, so a future reader, human or Claude,
 | [0002](0002-iac-opentofu.md) | IaC: OpenTofu with remote state in Scaleway Object Storage | Accepted |
 | [0003](0003-git-hosting-github-public.md) | Git hosting: public GitHub repo, GitHub Free | Accepted |
 | [0004](0004-cicd-github-actions.md) | CI/CD: GitHub Actions | Accepted |
-| [0005](0005-ci-credentials-scoped-api-keys.md) | CI credentials: scoped, expiring API keys (no OIDC yet) | Accepted |
+| [0005](0005-ci-credentials-scoped-api-keys.md) | CI credentials: scoped, expiring API keys (no OIDC yet) | Accepted (amended by 0010) |
 | [0006](0006-environments-region-dns.md) | Environments, region and DNS | Accepted (DNS part superseded by 0008) |
 | [0007](0007-app-stack-typescript.md) | App stack: TypeScript end to end | Proposed |
 | [0008](0008-builtin-urls-no-custom-domain.md) | Built-in Scaleway URLs instead of a custom domain; `web` forwards `/api` | Accepted |
 | [0009](0009-identity-split-and-public-endpoints.md) | Identities in bootstrap (app vs. migrate DB roles); public endpoints, no private network | Accepted |
+| [0010](0010-pipeline-design.md) | Pipelines: plan/apply identity split, state bucket policy, build once and promote | Accepted |
 
 Figures marked **(verify)** were not confirmed from a primary source during Phase 1. They are re-checked in Phase 2.
 

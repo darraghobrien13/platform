@@ -1,0 +1,79 @@
+# Infrastructure pipeline (ADR 0004 / 0010).
+#   PR    -> security scan + read-only `tofu plan` for dev and prod (ci-plan key, no lock)
+#   main  -> plan + apply dev, then plan + apply prod after manual approval
+# Never runs infra/bootstrap or infra/github: those are break-glass / local only.
+name: infra
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+  SCW_DEFAULT_ORGANIZATION_ID: ${{ vars.SCW_ORGANIZATION_ID }}
+  TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+
+jobs:
+  scan:
+    name: iac-scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - name: Trivy IaC misconfiguration scan
+        run: trivy config --exit-code 1 --severity HIGH,CRITICAL infra
+
+  plan:
+    name: plan (${{ matrix.env }})
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev, prod]
+    env:
+      # Read-only identity: can't change anything, can't read bootstrap state.
+      SCW_ACCESS_KEY: ${{ secrets.SCW_PLAN_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_PLAN_SECRET_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCW_PLAN_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_PLAN_SECRET_KEY }}
+    defaults:
+      run:
+        working-directory: infra/envs/${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - run: tofu init
+      - name: tofu plan (read-only, no lock)
+        run: |
+          set +e
+          tofu plan -lock=false -no-color -detailed-exitcode > plan.txt 2>&1
+          code=$?
+          cat plan.txt
+          {
+            echo "### ${{ matrix.env }}: $(grep -E '^(Plan:|No changes)' plan.txt || echo 'plan failed')"
+            echo '```'; sed -n '/OpenTofu will perform/,$p' plan.txt | head -300; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # 0 = no changes, 2 = changes (both fine); anything else fails the job
+          [ "$code" -eq 0 ] || [ "$code" -eq 2 ]
+
+  apply-dev:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: scan
+    uses: ./.github/workflows/tofu-apply.yml
+    with:
+      env: dev
+    secrets: inherit
+
+  apply-prod:
+    needs: apply-dev
+    uses: ./.github/workflows/tofu-apply.yml
+    with:
+      env: prod
+    secrets: inherit

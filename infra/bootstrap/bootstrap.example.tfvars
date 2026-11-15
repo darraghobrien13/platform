@@ -2,3 +2,4 @@
 state_bucket_name = "darragh-platform-tfstate"
 admin_email       = "admin@example.com"
 alert_emails      = ["you@example.com"]
+owner_email       = "owner@example.com"

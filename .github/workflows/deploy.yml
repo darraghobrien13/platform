@@ -1,0 +1,124 @@
+# Reusable: get an image into one environment's registry, run migrations, deploy
+# api then web, smoke-test. Modes:
+#   build     (dev)   build from this commit, scan, push           -> "build once"
+#   promote   (prod)  copy the exact image dev ran from dev's registry -> no rebuild
+#   rollback  (any)   redeploy a tag that's already in the registry
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: string
+      ref:
+        description: Git SHA (full or 12+ chars) whose image to deploy.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy (${{ inputs.env }}, ${{ inputs.mode }})
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.env }}
+    concurrency:
+      group: env-${{ inputs.env }} # shared with tofu-apply: one change at a time
+      cancel-in-progress: false
+    env:
+      ENV: ${{ inputs.env }}
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      SCW_DEFAULT_ORGANIZATION_ID: ${{ vars.SCW_ORGANIZATION_ID }}
+      SCW_DEFAULT_REGION: fr-par
+      REGISTRY_HOST: rg.fr-par.scw.cloud
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+
+      - name: Resolve tag, project and registry
+        run: |
+          ref='${{ inputs.ref }}'
+          echo "TAG=${ref:0:12}" >> "$GITHUB_ENV"
+          echo "REG=$REGISTRY_HOST/darragh-platform-$ENV" >> "$GITHUB_ENV"
+          P=$(scw account project list name="platform-$ENV" -o json | jq -er '.[0].id')
+          echo "PROJECT_ID=$P" >> "$GITHUB_ENV"
+
+      - name: Registry login
+        run: |
+          echo "$SCW_SECRET_KEY" | docker login "$REGISTRY_HOST" -u nologin --password-stdin
+          crane auth login "$REGISTRY_HOST" -u nologin -p "$SCW_SECRET_KEY"
+
+      - name: Build, scan and push (dev)
+        if: inputs.mode == 'build'
+        run: |
+          for svc in api web; do
+            img="$REG/$svc:$TAG"
+            docker build --build-arg APP_VERSION="$TAG" -t "$img" "app/$svc"
+            trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$img"
+            docker push "$img"
+          done
+
+      - name: Promote the image dev ran (prod)
+        if: inputs.mode == 'promote'
+        run: |
+          for svc in api web; do
+            crane copy "$REGISTRY_HOST/darragh-platform-dev/$svc:$TAG" "$REG/$svc:$TAG"
+            echo "$svc digest: $(crane digest "$REG/$svc:$TAG")"
+          done
+
+      - name: Check image exists (rollback)
+        if: inputs.mode == 'rollback'
+        run: |
+          for svc in api web; do crane digest "$REG/$svc:$TAG"; done
+
+      - name: Migrate (as migrate-${{ inputs.env }})
+        run: |
+          sid=$(scw secret secret list project-id="$PROJECT_ID" name=db-migrate-credentials -o json | jq -er '.[0].id')
+          creds=$(scw secret version access secret-id="$sid" revision=latest -o json | jq -r .data | base64 -d)
+          echo "::add-mask::$(jq -r .password <<<"$creds")"
+          jq -e '.user and .password' <<<"$creds" >/dev/null
+          echo "migrate credentials OK; no migrations yet (the app's migrate step arrives in Phase 5)"
+
+      - name: Deploy api, then web
+        run: |
+          ns=$(scw container namespace list project-id="$PROJECT_ID" name="platform-$ENV" -o json | jq -er '.[0].id')
+          for svc in api web; do
+            cid=$(scw container container list namespace-id="$ns" name="$svc" -o json | jq -er '.[0].id')
+            scw container container update "$cid" image="$REG/$svc:$TAG" >/dev/null
+            for i in $(seq 1 60); do
+              st=$(scw container container get "$cid" -o json | jq -r .status)
+              [ "$st" = ready ] && break
+              [ "$st" = error ] && { scw container container get "$cid" -o json | jq -r .error_message; exit 1; }
+              sleep 5
+            done
+            [ "$st" = ready ] || { echo "$svc not ready after 5 min (status=$st)"; exit 1; }
+            url=$(scw container container get "$cid" -o json | jq -r '.public_endpoint // ("https://" + .domain_name)')
+            echo "$(tr a-z A-Z <<<"$svc")_URL=$url" >> "$GITHUB_ENV"
+            echo "$svc deployed: $REG/$svc:$TAG -> $url"
+          done
+
+      - name: Smoke test
+        run: |
+          check() { # url expected-service
+            for i in $(seq 1 10); do
+              body=$(curl -fsS -m 30 "$1" || true)
+              if jq -e --arg v "$TAG" --arg s "$2" '.status=="ok" and .version==$v and .service==$s' <<<"$body" >/dev/null 2>&1; then
+                echo "OK $1 -> $body"; return 0; fi
+              sleep 6
+            done
+            echo "FAILED $1 -> $body"; return 1
+          }
+          check "$API_URL/healthz" api
+          check "$WEB_URL/healthz" web
+          check "$WEB_URL/api/healthz" api   # through web's /api proxy
+          {
+            echo "### $ENV: deployed \`$TAG\` (${{ inputs.mode }})"
+            echo "- web: $WEB_URL"
+            echo "- api: $API_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
