@@ -45,11 +45,13 @@ variable "db_max_cpu" {
 locals {
   name = "platform-${var.env}"
 
-  # endpoint looks like postgres://host:5432/db?sslmode=require
+  # endpoint looks like postgres://host:5432/db?sslmode=require. Use the explicit
+  # verify-full (encrypt AND verify the server certificate): `require` is
+  # ambiguous and node-postgres warns its meaning will change.
   database_url = format("postgres://%s:%s@%s",
     var.db_credentials.user,
     var.db_credentials.password,
-    trimprefix(module.database.endpoint, "postgres://"),
+    replace(trimprefix(module.database.endpoint, "postgres://"), "sslmode=require", "sslmode=verify-full"),
   )
 }
 
